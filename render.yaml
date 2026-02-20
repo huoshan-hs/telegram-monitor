@@ -1,0 +1,15 @@
+services:
+  - type: worker
+    name: telegram-monitor
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python monitor.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: CHAT_ID
+        sync: false
+      - key: CHANNELS
+        sync: false
+      - key: POLL_INTERVAL
+        sync: false
