@@ -120,6 +120,15 @@ def process_channel(channel: str, state: dict) -> None:
     if not new_messages:
         return
 
+    # 保护：积压太多时只推最新 3 条，跳过更早的旧消息
+    MAX_NOTIFY = 3
+    if len(new_messages) > MAX_NOTIFY:
+        skipped = len(new_messages) - MAX_NOTIFY
+        print(f"  ⚠️ @{channel}: 积压 {len(new_messages)} 条，跳过 {skipped} 条旧消息")
+        # 先更新 state 跳过旧消息
+        state[channel] = new_messages[-MAX_NOTIFY - 1]["id"]
+        new_messages = new_messages[-MAX_NOTIFY:]
+
     for msg in new_messages:
         desc = msg['text'][:60] if msg['text'] else '[图片]'
         print(f"\n[新消息] @{channel} (#{msg['id']}): {desc}...")
