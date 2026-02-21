@@ -1,12 +1,10 @@
 """
-Telegram 频道消息监控 + 翻译 + 通知（GitHub Actions 版）
+Telegram 频道消息监控 + 翻译 + 通知
 
-单次运行模式：检查新消息 → 翻译 → 通知 → 保存状态 → 退出。
-通过 GitHub Actions cron 定时调用实现持续监控。
-
-本地使用:
-    python monitor.py              # 单次运行
-    python monitor.py --loop       # 循环模式（本地调试用）
+运行模式:
+    python monitor.py                  # 单次检查
+    python monitor.py --loop           # 本地持续监控
+    python monitor.py --duration 240   # 循环指定秒数后退出（GitHub Actions 用）
 """
 
 import sys
@@ -99,7 +97,6 @@ def process_channel(channel: str, state: dict) -> None:
 
     new_messages = [m for m in messages if m["id"] > last_seen]
     if not new_messages:
-        print(f"  @{channel}: 无新消息")
         return
 
     for msg in new_messages:
@@ -114,32 +111,47 @@ def process_channel(channel: str, state: dict) -> None:
         state[channel] = msg["id"]
 
 
-def run_once() -> None:
-    """单次运行：检查所有频道 → 保存状态。"""
+def check_all() -> None:
+    """检查所有频道一次并保存状态。"""
     state = load_state()
-    print(f"[检查] {len(CHANNELS)} 个频道...")
     for ch in CHANNELS:
         process_channel(ch, state)
     save_state(state)
-    print("[完成]")
+
+
+def run_duration(seconds: int) -> None:
+    """在指定时间内持续循环检查（GitHub Actions 用）。
+
+    每次 Actions cron（5分钟）触发时，在内部循环 4 分钟，
+    每 POLL_INTERVAL 秒检查一次，实现近实时监控。
+    """
+    print(f"[启动] 持续监控 {seconds} 秒，间隔 {POLL_INTERVAL} 秒")
+    print(f"[频道] {', '.join('@' + ch for ch in CHANNELS)}")
+
+    end_time = time.time() + seconds
+    check_all()  # 立即检查一次
+
+    while time.time() < end_time:
+        time.sleep(POLL_INTERVAL)
+        check_all()
+
+    print(f"[结束] 本轮监控完成")
 
 
 def run_loop() -> None:
-    """循环模式（本地调试用）。"""
+    """本地持续监控模式。"""
     print("=" * 50)
     print("  Telegram 频道监控翻译通知系统")
     print("=" * 50)
     print(f"\n监控频道: {', '.join('@' + ch for ch in CHANNELS)}")
-    print(f"轮询间隔: {POLL_INTERVAL} 秒\n")
+    print(f"轮询间隔: {POLL_INTERVAL} 秒")
+    print(f"[监控中] 按 Ctrl+C 停止\n")
 
-    # 初始化
-    run_once()
-
-    print(f"\n[监控中] 按 Ctrl+C 停止\n")
+    check_all()
     try:
         while True:
             time.sleep(POLL_INTERVAL)
-            run_once()
+            check_all()
     except KeyboardInterrupt:
         print("\n[停止] 已退出")
 
@@ -147,5 +159,9 @@ def run_loop() -> None:
 if __name__ == "__main__":
     if "--loop" in sys.argv:
         run_loop()
+    elif "--duration" in sys.argv:
+        idx = sys.argv.index("--duration")
+        dur = int(sys.argv[idx + 1])
+        run_duration(dur)
     else:
-        run_once()
+        check_all()

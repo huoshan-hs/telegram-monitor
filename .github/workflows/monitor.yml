@@ -29,12 +29,13 @@ jobs:
           key: monitor-state
 
       - name: Run monitor
+        timeout-minutes: 6
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           CHANNELS: ${{ secrets.CHANNELS }}
           POLL_INTERVAL: '30'
-        run: python monitor.py
+        run: python monitor.py --duration 240
 
       - name: Save state
         uses: actions/cache/save@v4
