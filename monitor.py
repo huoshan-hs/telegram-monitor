@@ -68,14 +68,35 @@ def fetch_channel_messages(channel: str) -> list[dict]:
         except (ValueError, IndexError):
             continue
 
+        # 提取图片 URL（从 background-image style 中）
+        image_url = None
+        photo_wrap = msg_div.select_one(".tgme_widget_message_photo_wrap")
+        if photo_wrap:
+            style = photo_wrap.get("style", "")
+            if "background-image:url('" in style:
+                image_url = style.split("background-image:url('")[1].split("')")[0]
+            elif "background-image:url(" in style:
+                image_url = style.split("background-image:url(")[1].split(")")[0].strip("'\"")
+
+        # 提取文本（排除引用内容）
         text_div = msg_div.select_one(".tgme_widget_message_text")
-        if not text_div:
-            continue
-        text = text_div.get_text(separator="\n").strip()
-        if not text:
+        text = ""
+        if text_div:
+            # 先移除引用块，避免混入引用内容
+            for reply_el in text_div.select(".tgme_widget_message_reply"):
+                reply_el.decompose()
+            text = text_div.get_text(separator="\n").strip()
+
+        # 跳过既无文字也无图片的消息
+        if not text and not image_url:
             continue
 
-        messages.append({"id": msg_id, "text": text, "channel": channel})
+        messages.append({
+            "id": msg_id,
+            "text": text,
+            "channel": channel,
+            "image_url": image_url,
+        })
 
     return messages
 
@@ -100,11 +121,16 @@ def process_channel(channel: str, state: dict) -> None:
         return
 
     for msg in new_messages:
-        print(f"\n[新消息] @{channel} (#{msg['id']}): {msg['text'][:60]}...")
-        translated = translate(msg["text"])
-        ok = send_notification(f"@{channel}", msg["text"], translated)
+        desc = msg['text'][:60] if msg['text'] else '[图片]'
+        print(f"\n[新消息] @{channel} (#{msg['id']}): {desc}...")
+        translated = translate(msg["text"]) if msg["text"] else None
+        ok = send_notification(
+            f"@{channel}", msg["text"] or "[图片消息]", translated,
+            image_url=msg.get("image_url"),
+        )
         if ok:
-            label = "翻译并通知" if translated else "直接转发（中文）"
+            has_img = " +图片" if msg.get("image_url") else ""
+            label = f"翻译并通知{has_img}" if translated else f"直接转发{has_img}"
             print(f"  ✅ {label}")
         else:
             print(f"  ❌ 通知发送失败")
