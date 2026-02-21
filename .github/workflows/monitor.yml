@@ -27,6 +27,8 @@ jobs:
         with:
           path: state.json
           key: monitor-state
+          restore-keys: |
+            monitor-state-
 
       - name: Run monitor
         timeout-minutes: 6
