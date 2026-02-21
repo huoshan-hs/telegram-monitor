@@ -2,9 +2,14 @@ name: Telegram Monitor
 
 on:
   schedule:
-    # 备用 cron，每小时兜底触发一次（防止完全停止）
-    - cron: '0 * * * *'
+    # 兜底：每 6 小时触发一次（仅在自维持链断裂时生效）
+    - cron: '0 */6 * * *'
   workflow_dispatch:
+
+# 关键：同一时间只允许一个运行，新的自动取消旧的
+concurrency:
+  group: telegram-monitor
+  cancel-in-progress: true
 
 jobs:
   monitor:

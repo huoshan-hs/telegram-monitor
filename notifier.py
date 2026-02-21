@@ -10,7 +10,7 @@ BJT = timezone(timedelta(hours=8))
 BOT_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
-def _build_caption(
+def _build_text(
     channel_name: str,
     original_text: str,
     translated_text: str | None,
@@ -18,8 +18,7 @@ def _build_caption(
     """构建消息正文。"""
     now = datetime.now(BJT).strftime("%Y-%m-%d %H:%M:%S")
 
-    # Telegram caption 上限 1024，message 上限 4096
-    max_len = 800
+    max_len = 1200
     original_display = original_text[:max_len] + "..." if len(original_text) > max_len else original_text
 
     if translated_text:
@@ -39,60 +38,55 @@ def _build_caption(
         )
 
 
+def _send_photo(image_url: str, caption: str) -> bool:
+    """尝试发送图片，失败则返回 False。"""
+    try:
+        resp = requests.post(
+            f"{BOT_API}/sendPhoto",
+            json={"chat_id": CHAT_ID, "photo": image_url, "caption": caption[:1024]},
+            timeout=15,
+        )
+        if resp.status_code == 200 and resp.json().get("ok"):
+            return True
+        print(f"  [图片发送失败，回退到纯文字] {resp.json().get('description', '')[:80]}")
+    except Exception as e:
+        print(f"  [图片发送异常，回退到纯文字] {e}")
+    return False
+
+
 def send_notification(
     channel_name: str,
     original_text: str,
     translated_text: str | None,
     image_url: str | None = None,
 ) -> bool:
-    """发送通知到用户私聊。支持图片+文字。
+    """发送通知到用户私聊。图片发送失败会自动回退到纯文字。"""
+    text = _build_text(channel_name, original_text, translated_text)
 
-    Args:
-        channel_name: 来源频道名称
-        original_text: 原始消息文本
-        translated_text: 翻译后的文本（None 表示原文已是中文）
-        image_url: 图片 URL（None 表示无图片）
+    # 有图片时先尝试 sendPhoto
+    photo_sent = False
+    if image_url:
+        photo_sent = _send_photo(image_url, text)
 
-    Returns:
-        是否发送成功
-    """
-    caption = _build_caption(channel_name, original_text, translated_text)
+    # 图片发送成功且文字短 → 已包含在 caption 里，无需再发文字
+    if photo_sent and len(text) <= 1024:
+        return True
+
+    # 图片发送成功但文字太长 → 追加发文字
+    # 图片发送失败或无图片 → 直接发文字
+    if image_url and not photo_sent:
+        text = f"🖼️ [含图片，请查看原频道]\n\n{text}"
 
     try:
-        if image_url:
-            # 有图片：用 sendPhoto
-            # caption 上限 1024 字符，超出则拆分为 photo + message
-            if len(caption) <= 1024:
-                resp = requests.post(
-                    f"{BOT_API}/sendPhoto",
-                    json={"chat_id": CHAT_ID, "photo": image_url, "caption": caption},
-                    timeout=15,
-                )
-            else:
-                # 先发图片，再发文字
-                requests.post(
-                    f"{BOT_API}/sendPhoto",
-                    json={"chat_id": CHAT_ID, "photo": image_url},
-                    timeout=15,
-                )
-                resp = requests.post(
-                    f"{BOT_API}/sendMessage",
-                    json={"chat_id": CHAT_ID, "text": caption},
-                    timeout=15,
-                )
-        else:
-            # 无图片：用 sendMessage
-            resp = requests.post(
-                f"{BOT_API}/sendMessage",
-                json={"chat_id": CHAT_ID, "text": caption},
-                timeout=15,
-            )
-
+        resp = requests.post(
+            f"{BOT_API}/sendMessage",
+            json={"chat_id": CHAT_ID, "text": text},
+            timeout=15,
+        )
         if resp.status_code == 200 and resp.json().get("ok"):
             return True
-        else:
-            print(f"[通知错误] {resp.text[:200]}")
-            return False
+        print(f"[通知错误] {resp.text[:200]}")
+        return False
     except Exception as e:
         print(f"[通知错误] {e}")
         return False
